@@ -22,6 +22,7 @@ import 'package:PiliPlus/utils/mobile_observer.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
+import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
@@ -45,7 +46,7 @@ class _MainAppState extends PopScopeState<MainApp>
   Brightness? _brightness;
 
   @override
-  bool get initCanPop => false;
+  bool get initCanPop => Platform.isAndroid && Pref.systemPredictiveBack;
 
   @override
   void initState() {
@@ -335,6 +336,11 @@ class _MainAppState extends PopScopeState<MainApp>
 
   @override
   void onPopInvokedWithResult(bool didPop, Object? result) {
+    if (didPop) {
+      // 系统预测返回模式：根路由已被系统手势弹出（应用退出），
+      // 跳过自定义返回逻辑，让系统播放跟手退出动画
+      return;
+    }
     if (_mainController.directExitOnBack) {
       _onBack();
     } else {

@@ -58,6 +58,8 @@ android {
         if (project.hasProperty("dev")) {
             resValues = true
         }
+        // 液态玻璃原生层（LiquidGlassOverlay）需要 Compose
+        compose = true
     }
 
     buildTypes {
@@ -99,4 +101,15 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // 液态玻璃原生层（测试特性，仅 Android 13+ 生效，运行时门控降级）
+    // compose-bom 与 backdrop 均位于 Maven Central（项目已配置 mavenCentral()）。
+    // 注意：backdrop 库当前只有 alpha 版本线，故用 latest.integration 解析；
+    // 版本稳定后应改为钉死版本号（CI 首次构建验证解析成功）。
+    implementation(platform("androidx.compose:compose-bom:latest.integration"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("io.github.kyant0:backdrop:latest.integration")
 }

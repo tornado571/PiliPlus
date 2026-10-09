@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'package:PiliPlus/common/widgets/liquid_glass.dart';
+import 'package:PiliPlus/utils/android/liquid_glass_native.dart';
 import 'package:PiliPlus/utils/extension/theme_ext.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:material_ui/material_ui.dart';
@@ -119,13 +119,9 @@ class FloatingNavigationBar extends StatelessWidget {
         height: _kNavigationHeight,
         width: destinations.length * _kIndicatorWidth,
         child: Pref.liquidGlass
-            ? GlassSurface(
-                // 液态玻璃底栏：背景模糊 + 半透明表面 + 镜面高光
+            ? AdaptiveGlassBar(
+                // 液态玻璃底栏：Android 13+ 原生 AGSL 折射，其余平台 v2 降级
                 borderRadius: _kBorderRadius,
-                shape: RoundedSuperellipseBorder(
-                  side: defaults.borderSide,
-                  borderRadius: _kBorderRadius,
-                ),
                 child: content,
               )
             : DecoratedBox(

@@ -1055,4 +1055,8 @@ abstract final class Pref {
   /// 液态玻璃模糊强度 sigma，0 为降级模式（无模糊）
   static double get liquidGlassBlur =>
       _setting.get(SettingBoxKey.liquidGlassBlur, defaultValue: 20.0);
+
+  /// 主页返回直接走系统预测返回动画（跟手退出）
+  static bool get systemPredictiveBack =>
+      _setting.get(SettingBoxKey.systemPredictiveBack, defaultValue: false);
 }

@@ -20,6 +20,10 @@ class MainActivity : AudioServiceActivity() {
         OplusViewSeamlessHelper.registerChannel(
             flutterEngine.dartExecutor.binaryMessenger
         )
+        LiquidGlassOverlay.registerChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            this,
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

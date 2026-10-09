@@ -401,6 +401,16 @@ List<SettingsModel> get styleSettings => [
     onChanged: (value) => Get.find<MainController>().directExitOnBack = value,
   ),
   if (Platform.isAndroid)
+    const SwitchModel(
+      title: '系统预测返回退出',
+      subtitle: '主页手势返回直接退出并播放系统跟手返回动画（Android 13+），'
+          '开启后忽略【返回时直接退出】与回首页tab逻辑',
+      leading: Icon(Icons.motion_photos_on_outlined),
+      setKey: SettingBoxKey.systemPredictiveBack,
+      defaultVal: false,
+      needReboot: true,
+    ),
+  if (Platform.isAndroid)
     NormalModel(
       onTap: (context, setState) => Get.toNamed('/displayModeSetting'),
       title: '屏幕帧率',

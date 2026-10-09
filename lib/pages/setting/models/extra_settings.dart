@@ -32,6 +32,7 @@ import 'package:PiliPlus/pages/video/reply/widgets/reply_item_grpc.dart';
 import 'package:PiliPlus/services/download/download_service.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/android/bindings.g.dart';
+import 'package:PiliPlus/utils/android/oplus_seamless.dart';
 import 'package:PiliPlus/utils/extension/num_ext.dart';
 import 'package:PiliPlus/utils/feed_back.dart';
 import 'package:PiliPlus/utils/filtering_text.dart';
@@ -80,6 +81,20 @@ List<SettingsModel> get extraSettings => [
       setKey: SettingBoxKey.enableDocProvider,
       defaultVal: Pref.enableDocProvider,
       onChanged: AndroidHelper.updateDocProvider,
+    ),
+  if (Platform.isAndroid)
+    NormalModel(
+      leading: const Icon(Icons.motion_photos_on_outlined),
+      title: 'OPPO无缝转场能力检测',
+      subtitle: '检测 ColorOS View Seamless SDK 可用性（未接入转场，仅供真机验证）',
+      onTap: (context, setState) async {
+        final res = await OplusViewSeamless.checkSupport();
+        SmartDialog.showToast(
+          res.supported
+              ? '支持无缝转场 · SDK版本：${res.version}'
+              : '不支持：${res.reason}',
+        );
+      },
     ),
   SplitModel(
     normalModel: const NormalModel.split(

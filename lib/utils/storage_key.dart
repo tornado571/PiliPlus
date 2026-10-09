@@ -159,7 +159,8 @@ abstract final class SettingBoxKey {
       enableDocProvider = 'enableDocProvider',
       enableEmoteTooltip = 'enableEmoteTooltip',
       liquidGlass = 'liquidGlass',
-      liquidGlassBlur = 'liquidGlassBlur';
+      liquidGlassBlur = 'liquidGlassBlur',
+      systemPredictiveBack = 'systemPredictiveBack';
 
   static const String minimizeOnExit = 'minimizeOnExit',
       windowSize = 'windowSize',
