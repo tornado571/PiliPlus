@@ -15,6 +15,8 @@ val isBuiltInKotlinEnabled = agpMajorVersion >= 9 &&
         (builtInKotlinProperty == null || builtInKotlinProperty.toBoolean())
 if (!isBuiltInKotlinEnabled) {
     apply(plugin = "org.jetbrains.kotlin.android")
+    // Compose Compiler 插件（液态玻璃原生层），版本须与 Kotlin 一致
+    apply(plugin = "org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
