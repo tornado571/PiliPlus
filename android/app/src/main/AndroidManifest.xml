@@ -35,10 +35,14 @@
         </intent>
     </queries>
 
+    <!-- 可预测返回（Predictive Back）：Android 13+ 手势返回事件、Android 14+ 返回预测动画
+         （返回桌面/跨 Activity 缩放预览）。Flutter 3.24+ 引擎在开启后自动注册
+         OnBackInvokedCallback 并转发至框架，应用内拦截由 PopScope/
+         RoutePopDisposition 处理（本应用根路由已用该模式，兼容）。 -->
     <application xmlns:tools="http://schemas.android.com/tools"
         android:name="${applicationName}"
         android:allowBackup="false"
-        android:enableOnBackInvokedCallback="false"
+        android:enableOnBackInvokedCallback="true"
         android:fullBackupContent="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"

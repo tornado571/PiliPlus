@@ -124,6 +124,24 @@ List<SettingsModel> get styleSettings => [
     defaultVal: false,
     needReboot: true,
   ),
+  const SwitchModel(
+    title: '液态玻璃底栏',
+    subtitle: '悬浮底栏应用玻璃材质（背景模糊+镜面高光），需开启【悬浮底栏】',
+    leading: Icon(Icons.blur_on_outlined),
+    setKey: SettingBoxKey.liquidGlass,
+    defaultVal: false,
+    needReboot: true,
+  ),
+  NormalModel(
+    leading: const Icon(Icons.gradient_outlined),
+    title: '玻璃模糊强度',
+    subtitle: '液态玻璃底栏的背景模糊强度，0为低性能模式（仅半透明，无模糊）',
+    getTrailing: (theme) => Text(
+      Pref.liquidGlassBlur.toStringAsFixed(0),
+      style: theme.textTheme.titleSmall,
+    ),
+    onTap: _showGlassBlurDialog,
+  ),
   NormalModel(
     leading: const Icon(Icons.calendar_view_week_outlined),
     title: '列表宽度（dp）限制',
@@ -809,6 +827,28 @@ Future<void> _showToastDialog(
     CustomToast.toastOpacity = res;
     await GStorage.setting.put(SettingBoxKey.defaultToastOp, res);
     SmartDialog.showToast('设置成功');
+    setState();
+  }
+}
+
+Future<void> _showGlassBlurDialog(
+  BuildContext context,
+  VoidCallback setState,
+) async {
+  final res = await showDialog<double>(
+    context: context,
+    builder: (context) => SliderDialog(
+      title: const Text('玻璃模糊强度'),
+      value: Pref.liquidGlassBlur,
+      min: 0.0,
+      max: 40.0,
+      divisions: 8,
+      precise: 0,
+    ),
+  );
+  if (res != null) {
+    await GStorage.setting.put(SettingBoxKey.liquidGlassBlur, res);
+    SmartDialog.showToast('重启生效');
     setState();
   }
 }

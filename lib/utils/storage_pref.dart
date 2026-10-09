@@ -1047,4 +1047,12 @@ abstract final class Pref {
 
   static bool get enableEmoteTooltip =>
       _setting.get(SettingBoxKey.enableEmoteTooltip, defaultValue: false);
+
+  /// 液态玻璃底栏开关（依赖悬浮底栏样式）
+  static bool get liquidGlass =>
+      _setting.get(SettingBoxKey.liquidGlass, defaultValue: false);
+
+  /// 液态玻璃模糊强度 sigma，0 为降级模式（无模糊）
+  static double get liquidGlassBlur =>
+      _setting.get(SettingBoxKey.liquidGlassBlur, defaultValue: 20.0);
 }

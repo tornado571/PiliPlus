@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager.LayoutParams
 import com.ryanheise.audioservice.AudioServiceActivity
+import io.flutter.embedding.engine.FlutterEngine
 
 class MainActivity : AudioServiceActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -12,6 +13,13 @@ class MainActivity : AudioServiceActivity() {
         if (AndroidHelper.isFoldable) {
             AndroidHelper.ToDart.onConfigurationChanged?.run()
         }
+    }
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        OplusViewSeamlessHelper.registerChannel(
+            flutterEngine.dartExecutor.binaryMessenger
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
