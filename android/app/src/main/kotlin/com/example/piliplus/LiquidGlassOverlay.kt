@@ -239,14 +239,18 @@ private class GlassShaderView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         val content = contentShader ?: return
-        val glass = ensureShader() ?: return
+        val w = width.toFloat()
+        val h = height.toFloat()
+        if (w <= 0f || h <= 0f) return
+        val glass = ensureShader(
+            w,
+            h,
+            radiusPx.coerceAtMost(minOf(w, h) / 2f),
+        ) ?: return
         glass.setInputShader("content", content)
-        glass.setFloat("width", width.toFloat())
-        glass.setFloat("height", height.toFloat())
-        glass.setFloat("radius", radiusPx.coerceAtMost(width.coerceAtMost(height) / 2f))
         paint.shader = glass
         try {
-            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+            canvas.drawRect(0f, 0f, w, h, paint)
         } catch (_: Throwable) {
             // 运行期着色器异常（部分机型 AGSL 兼容性）：不绘制，保持透明
         } finally {
@@ -254,44 +258,52 @@ private class GlassShaderView(context: Context) : View(context) {
         }
     }
 
-    private fun ensureShader(): RuntimeShader? {
-        shader?.let { return it }
+    private var shaderParams: Triple<Float, Float, Float>? = null
+    private var shaderFailed = false
+
+    /** 宽高/圆角以常量内插进 AGSL 源码（避免依赖 uniform setter API），
+     *  尺寸/圆角变化时重建着色器（开销极小且极少发生） */
+    private fun ensureShader(w: Float, h: Float, r: Float): RuntimeShader? {
+        if (shaderFailed) return null
+        val params = Triple(w, h, r)
+        val current = shader
+        if (current != null && shaderParams == params) return current
         return try {
-            RuntimeShader(GLASS_AGSL).also { shader = it }
+            RuntimeShader(glassAgl(w, h, r)).also {
+                shader = it
+                shaderParams = params
+            }
         } catch (_: Throwable) {
-            // AGSL 编译失败（语法/驱动不支持）：永久降级为不绘制
-            shader = FAILED
+            // AGSL 编译失败（语法/驱动不支持）：降级为不绘制
+            shaderFailed = true
             null
-        }.takeIf { it !== FAILED }
+        }
     }
 
     private companion object {
-        // 标记着色器不可用，避免每帧重试编译
-        private val FAILED = RuntimeShader("uniform shader c; half4 main(float2 p){return half4(0.0);}")
-
         /**
          * 液态玻璃 AGSL：
          * - SDF 圆角矩形边缘 → 边缘区沿法线方向折射采样（位移弯曲）
          * - R/G/B 三通道错位采样 → 色散
          * - 边缘 rim × 方向光 → 左上受光高光
+         * 尺寸参数以 const 内插（见 ensureShader）
          */
-        private val GLASS_AGSL = """
+        private fun glassAgl(w: Float, h: Float, r: Float) = """
             uniform shader content;
-            uniform float width;
-            uniform float height;
-            uniform float radius;
-            uniform float edgeWidth;
-            uniform float dispersion;
+            const float width = $w;
+            const float height = $h;
+            const float radius = $r;
+            const float edge = 12.0;
+            const float dispersion = 0.12;
 
-            float sdRoundedBox(float2 p, float2 b, float r) {
-                float2 q = abs(p) - b + r;
-                return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+            float sdRoundedBox(float2 p, float2 b, float rr) {
+                float2 q = abs(p) - b + rr;
+                return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - rr;
             }
 
             half4 main(float2 fragCoord) {
                 float2 halfSize = float2(width, height) * 0.5;
                 float2 p = fragCoord - halfSize;
-                float edge = edgeWidth > 0.5 ? edgeWidth : 12.0;
                 float d = sdRoundedBox(p, halfSize - 1.0, min(radius, min(halfSize.x, halfSize.y) - 1.0));
                 if (d > 1.0) {
                     return half4(0.0);
@@ -310,7 +322,7 @@ private class GlassShaderView(context: Context) : View(context) {
                 float bend = t * t * edge * 1.35;
 
                 float2 base = fragCoord - n * bend;
-                float2 disp = n * bend * (dispersion > 0.0 ? dispersion : 0.12);
+                float2 disp = n * bend * dispersion;
                 half4 c;
                 c.r = content.eval(base + disp).r;
                 c.g = content.eval(base).g;
