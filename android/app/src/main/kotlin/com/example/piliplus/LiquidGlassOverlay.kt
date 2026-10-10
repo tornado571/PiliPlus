@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.SavedStateRegistry
@@ -39,8 +40,11 @@ import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 
 // Kyant0 Backdrop（io.github.kyant0:backdrop，Maven Central 2.0.1）
-// 注意：Maven 组是 io.github.kyant0，但代码包是 com.kyant.backdrop
+// 注意：Maven 组是 io.github.kyant0，但代码包是 com.kyant.backdrop；
+// rememberLayerBackdrop/layerBackdrop 在子包 com.kyant.backdrop.backdrops
 import com.kyant.backdrop.*
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.effects.*
 
 /** 诊断日志标签（文件级） */
@@ -153,7 +157,7 @@ object LiquidGlassOverlay {
                 ViewCompositionStrategy.DisposeOnDetachedFromWindow
             )
             setViewTreeLifecycleOwner(lifecycleOwner)
-            setViewTreeViewModelStoreOwner(ViewModelStore())
+            setViewTreeViewModelStoreOwner(lifecycleOwner)
             setViewTreeSavedStateRegistryOwner(lifecycleOwner)
             setContent { LiquidGlassLayer() }
         }
@@ -291,17 +295,21 @@ object LiquidGlassOverlay {
 }
 
 /**
- * 给 ComposeView 提供 Lifecycle / SavedStateRegistry 宿主
+ * 给 ComposeView 提供 Lifecycle / ViewModelStore / SavedStateRegistry 宿主
  * （FlutterActivity 不是 ComponentActivity，需手动挂 owner）。
  */
-private class OverlayLifecycleOwner : SavedStateRegistryOwner {
+private class OverlayLifecycleOwner : SavedStateRegistryOwner, ViewModelStoreOwner {
 
     private val controller = SavedStateRegistryController.create(this)
+    private val store = ViewModelStore()
 
     override val lifecycle: LifecycleRegistry = LifecycleRegistry(this)
 
     override val savedStateRegistry: SavedStateRegistry
         get() = controller.savedStateRegistry
+
+    override val viewModelStore: ViewModelStore
+        get() = store
 
     init {
         controller.performRestore(null)
@@ -315,6 +323,7 @@ private class OverlayLifecycleOwner : SavedStateRegistryOwner {
             lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
             lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
             lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+            store.clear()
         }
     }
 }
