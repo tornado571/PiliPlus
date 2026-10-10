@@ -17,6 +17,17 @@ class MainActivity : AudioServiceActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        registerNativeChannels(flutterEngine)
+    }
+
+    /// 兜底：若 configureFlutterEngine 被父类链覆盖未生效，
+    /// 在 onPostResume（引擎必然已创建）再注册一次（幂等）
+    override fun onPostResume() {
+        super.onPostResume()
+        flutterEngine?.let { registerNativeChannels(it) }
+    }
+
+    private fun registerNativeChannels(flutterEngine: FlutterEngine) {
         OplusViewSeamlessHelper.registerChannel(
             flutterEngine.dartExecutor.binaryMessenger
         )

@@ -12,6 +12,7 @@ import 'package:flutter/widgets.dart'
         KeyedSubtree,
         GlobalKey,
         MediaQuery,
+        ModalRoute,
         Offset,
         Rect,
         State,
@@ -69,6 +70,9 @@ abstract final class LiquidGlassNative {
       await _channel.invokeMethod<void>('hide');
     } on Exception {}
   }
+
+  /// 原生层调用失败后永久标记不可用（回退 v2）
+  static void markUnsupported() => _supported = false;
 }
 
 /// 底栏自适应玻璃容器：
@@ -93,6 +97,7 @@ class _AdaptiveGlassBarState extends State<AdaptiveGlassBar> {
   final _boxKey = GlobalKey();
   bool? _native;
   bool _syncing = false;
+  bool _overlayShown = false;
   Rect? _lastRect;
 
   @override
@@ -122,21 +127,40 @@ class _AdaptiveGlassBarState extends State<AdaptiveGlassBar> {
     });
   }
 
-  void _pushRect() {
+  void _pushRect() async {
     final renderObject = _boxKey.currentContext?.findRenderObject();
-    if (renderObject is RenderBox && renderObject.attached) {
-      final size = renderObject.size;
-      if (!renderObject.hasSize || size.isEmpty) return;
-      final origin = renderObject.localToGlobal(Offset.zero);
-      final rect = origin & size;
-      final last = _lastRect;
-      if (last != null && rect == last) return;
-      _lastRect = rect;
-      LiquidGlassNative.show(
-        rect,
-        size.height / 2,
-        MediaQuery.devicePixelRatioOf(context),
-      );
+    if (renderObject is! RenderBox || !renderObject.attached) return;
+    final size = renderObject.size;
+    if (!renderObject.hasSize || size.isEmpty) return;
+
+    // 路由被覆盖（进入设置页等）时隐藏原生覆盖层，返回主页时恢复
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) {
+      if (_overlayShown) {
+        _overlayShown = false;
+        _lastRect = null;
+        await LiquidGlassNative.hide();
+      }
+      return;
+    }
+
+    final origin = renderObject.localToGlobal(Offset.zero);
+    final rect = origin & size;
+    final last = _lastRect;
+    if (last != null && rect == last) return;
+    _lastRect = rect;
+    final ok = await LiquidGlassNative.show(
+      rect,
+      size.height / 2,
+      MediaQuery.devicePixelRatioOf(context),
+    );
+    if (!ok && mounted && _native == true) {
+      // 原生层创建失败（无 FlutterSurfaceView / 异常等）：
+      // 永久回退 v2 降级实现，避免无背景状态
+      LiquidGlassNative.markUnsupported();
+      setState(() => _native = false);
+    } else if (ok) {
+      _overlayShown = true;
     }
   }
 

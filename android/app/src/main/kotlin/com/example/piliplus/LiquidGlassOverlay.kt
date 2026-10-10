@@ -1,42 +1,65 @@
 package com.example.piliplus
 
 import android.app.Activity
-import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapShader
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.Rect
-import android.graphics.RuntimeShader
-import android.graphics.Shader
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
+import android.util.Log
 import android.view.Choreographer
 import android.view.PixelCopy
 import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 
+// Kyant0 Backdrop（io.github.kyant0:backdrop，Maven Central 2.0.1）
+// 注意：Maven 组是 io.github.kyant0，但代码包是 com.kyant.backdrop
+import com.kyant.backdrop.*
+import com.kyant.backdrop.effects.*
+
+/** 诊断日志标签（文件级） */
+private const val TAG = "PiliGlass"
+
 /**
- * 原生液态玻璃底栏覆盖层（零第三方依赖）
+ * 原生液态玻璃底栏覆盖层（Kyant0 Backdrop 实现）
  *
  * 原理：Flutter 底栏仍由 Flutter 渲染（含图标/文字），本层在 DecorView
- * 上以同尺寸普通 View 叠加在其正上方：
- * 1. Choreographer ~30fps 用 [PixelCopy] 从 FlutterSurfaceView 截取底栏区域
- *    （该位图包含信息流内容+半透明底栏 chrome）；
- * 2. [GLASS_AGSL] 自定义 AGSL 着色器（Android 13+ RuntimeShader）对该位图
- *    做 SDF 圆角边缘折射 + RGB 色散 + 方向性边缘高光 —— 与
- *    Kyant0/AndroidLiquidGlass 同等技术路线（其 Maven 工件版本与文档包名
- *    不符，故按同思路自实现，避免依赖不确定性）；
- * 3. 覆盖层不消费触摸事件，点击穿透回 FlutterView，交互逻辑零改动。
+ * 上以同尺寸 ComposeView 叠加在其正上方：
+ * 1. Choreographer 逐帧（仅在捕获空闲时）用 [PixelCopy] 从
+ *    FlutterSurfaceView 截取底栏区域（含信息流内容+底栏 chrome）；
+ * 2. Compose 内把位图作为 backdrop 源，用 Kyant0 Backdrop 的 AGSL
+ *    效果链（vibrancy + blur + lens 折射/色散）绘制液态玻璃；
+ * 3. 覆盖层不消费触摸事件，点击穿透回 FlutterView，交互零改动；
+ * 4. Dart 侧在路由被覆盖（进入二级页）时调用 hide 隐藏本层。
  *
- * 门控：API 33+（RuntimeShader）；不支持或着色器编译失败时 Dart 侧保持
- * GlassSurface（Flutter 实现）降级，本层完全不创建/不绘制。
+ * 门控：API 33+（RuntimeShader）；不支持或创建失败时 Dart 侧保持
+ * GlassSurface（Flutter 实现）降级。
  */
 object LiquidGlassOverlay {
 
@@ -46,17 +69,21 @@ object LiquidGlassOverlay {
     val isSupported: Boolean
         get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 
-    private const val frameIntervalMs = 33L // ~30fps
-
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var activity: Activity? = null
-    private var overlay: GlassShaderView? = null
+    private var overlay: ComposeView? = null
+    private var owner: OverlayLifecycleOwner? = null
     private var surfaceView: SurfaceView? = null
+    private var bitmap: Bitmap? = null
+    private val frameBitmap = mutableStateOf<ImageBitmap?>(null)
+    private var radiusPx: Float = 0f
+    private var capturing = false
     private var choreographerCallback: Choreographer.FrameCallback? = null
 
     fun registerChannel(messenger: BinaryMessenger, hostActivity: Activity) {
         activity = hostActivity
+        Log.d(TAG, "channel registered, isSupported=$isSupported")
         MethodChannel(messenger, CHANNEL_NAME).setMethodCallHandler { call, result ->
             when (call.method) {
                 "isSupported" -> result.success(isSupported)
@@ -75,8 +102,9 @@ object LiquidGlassOverlay {
                     try {
                         show(host, left, top, width, height, radius)
                         result.success(true)
-                    } catch (_: Throwable) {
+                    } catch (t: Throwable) {
                         // 任何原生异常都安全降级为 Flutter 玻璃
+                        Log.e(TAG, "show failed", t)
                         result.success(false)
                     }
                 }
@@ -97,9 +125,10 @@ object LiquidGlassOverlay {
         // 已存在覆盖层：仅原地更新位置与尺寸（动画期间每帧调用）
         val existing = overlay
         if (existing != null && existing.parent is ViewGroup) {
-            existing.radiusPx = radius
+            radiusPx = radius
             if (existing.width != width || existing.height != height) {
                 existing.layoutParams = FrameLayout.LayoutParams(width, height)
+                ensureBitmap(width, height)
             }
             existing.translationX = left.toFloat()
             existing.translationY = top.toFloat()
@@ -111,10 +140,22 @@ object LiquidGlassOverlay {
             ?: throw IllegalStateException("no decor view")
         val surface = findSurfaceView(decor)
             ?: throw IllegalStateException("FlutterSurfaceView not found")
-        surfaceView = surface
 
-        val view = GlassShaderView(activity).apply {
-            radiusPx = radius
+        this.activity = activity
+        this.surfaceView = surface
+        this.radiusPx = radius
+
+        val lifecycleOwner = OverlayLifecycleOwner()
+        owner = lifecycleOwner
+
+        val view = ComposeView(activity).apply {
+            setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnDetachedFromWindow
+            )
+            setViewTreeLifecycleOwner(lifecycleOwner)
+            setViewTreeViewModelStoreOwner(ViewModelStore())
+            setViewTreeSavedStateRegistryOwner(lifecycleOwner)
+            setContent { LiquidGlassLayer() }
         }
         overlay = view
 
@@ -122,6 +163,8 @@ object LiquidGlassOverlay {
         view.translationX = left.toFloat()
         view.translationY = top.toFloat()
         decor.addView(view, params)
+        Log.d(TAG, "overlay attached: ${width}x$height at ($left,$top), radius=$radius")
+        ensureBitmap(width, height)
         startCaptureLoop()
     }
 
@@ -131,9 +174,21 @@ object LiquidGlassOverlay {
             (view.parent as? ViewGroup)?.removeView(view)
         }
         overlay = null
+        owner?.destroy()
+        owner = null
         surfaceView = null
+        bitmap = null
+        frameBitmap.value = null
         // 注意：不置空 activity —— channel 仅注册一次，
         // 置空会导致后续 show 永远失败
+    }
+
+    private fun ensureBitmap(width: Int, height: Int) {
+        val current = bitmap
+        if (current == null || current.width != width || current.height != height) {
+            bitmap?.recycle()
+            bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        }
     }
 
     private fun startCaptureLoop() {
@@ -141,13 +196,12 @@ object LiquidGlassOverlay {
         val callback = object : Choreographer.FrameCallback {
             override fun doFrame(frameTimeNanos: Long) {
                 val overlayView = overlay ?: return
-                overlayView.requestCapture(
+                captureOnce(
                     surfaceView ?: return,
                     left = overlayView.translationX.toInt(),
                     top = overlayView.translationY.toInt(),
                     width = overlayView.width,
                     height = overlayView.height,
-                    handler = mainHandler,
                 )
                 Choreographer.getInstance().postFrameCallback(this)
             }
@@ -161,6 +215,36 @@ object LiquidGlassOverlay {
         choreographerCallback = null
     }
 
+    private fun captureOnce(
+        surface: SurfaceView,
+        left: Int,
+        top: Int,
+        width: Int,
+        height: Int,
+    ) {
+        val target = bitmap ?: return
+        if (width <= 0 || height <= 0 || capturing) return
+        capturing = true
+        val rect = android.graphics.Rect(left, top, left + width, top + height)
+        try {
+            PixelCopy.request(
+                surface,
+                rect,
+                target,
+                { copyResult ->
+                    capturing = false
+                    if (copyResult == PixelCopy.SUCCESS) {
+                        frameBitmap.value = target.asImageBitmap()
+                    }
+                },
+                mainHandler,
+            )
+        } catch (t: Throwable) {
+            capturing = false
+            Log.w(TAG, "pixelcopy failed", t)
+        }
+    }
+
     private fun findSurfaceView(view: View): SurfaceView? {
         if (view is SurfaceView) return view
         if (view is ViewGroup) {
@@ -170,175 +254,67 @@ object LiquidGlassOverlay {
         }
         return null
     }
+
+    @Composable
+    private fun LiquidGlassLayer() {
+        val bmp by frameBitmap
+        val backdrop = rememberLayerBackdrop { }
+        Box(modifier = Modifier.fillMaxSize()) {
+            val current = bmp ?: return@Box
+            // 背景源：截取的 Flutter 画面
+            Image(
+                bitmap = current,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .layerBackdrop(backdrop),
+            )
+            // 液态玻璃：vibrancy 提饱和 + 轻模糊 + lens 折射/色散
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .drawBackdrop(
+                        backdrop = backdrop,
+                        shape = { RoundedCornerShape(radiusPx) },
+                        effects = {
+                            vibrancy()
+                            blur(2f.dp.toPx())
+                            lens(10f.dp.toPx(), 32f.dp.toPx())
+                        },
+                        onDrawSurface = {
+                            drawRect(Color.White.copy(alpha = 0.06f))
+                        },
+                    ),
+            )
+        }
+    }
 }
 
 /**
- * 液态玻璃着色器承载 View：绘制 AGSL 折射/色散效果。
- * 不消费触摸事件（无 click/touch 监听），事件穿透至下层 FlutterView。
+ * 给 ComposeView 提供 Lifecycle / SavedStateRegistry 宿主
+ * （FlutterActivity 不是 ComponentActivity，需手动挂 owner）。
  */
-private class GlassShaderView(context: Context) : View(context) {
+private class OverlayLifecycleOwner : SavedStateRegistryOwner {
 
-    var radiusPx: Float = 0f
+    private val controller = SavedStateRegistryController.create(this)
 
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private var shader: RuntimeShader? = null
-    private var contentShader: BitmapShader? = null
-    private var frame: Bitmap? = null
-    private var capturing = false
-    private var lastCaptureAt = 0L
+    override val lifecycle: LifecycleRegistry = LifecycleRegistry(this)
 
-    fun requestCapture(
-        surface: SurfaceView,
-        left: Int,
-        top: Int,
-        width: Int,
-        height: Int,
-        handler: Handler,
-    ) {
-        if (width <= 0 || height <= 0 || capturing) return
-        val now = SystemClock.uptimeMillis()
-        if (now - lastCaptureAt < 33L) return
-        lastCaptureAt = now
-        val target = obtainBitmap(width, height)
-        capturing = true
-        val rect = Rect(left, top, left + width, top + height)
-        try {
-            PixelCopy.request(
-                surface,
-                rect,
-                target,
-                { copyResult ->
-                    capturing = false
-                    if (copyResult == PixelCopy.SUCCESS) {
-                        frame = target
-                        contentShader = BitmapShader(
-                            target,
-                            Shader.TileMode.CLAMP,
-                            Shader.TileMode.CLAMP,
-                        )
-                        invalidate()
-                    }
-                },
-                handler,
-            )
-        } catch (_: Throwable) {
-            capturing = false
-        }
+    override val savedStateRegistry: SavedStateRegistry
+        get() = controller.savedStateRegistry
+
+    init {
+        controller.performRestore(null)
+        lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+        lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_START)
+        lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
     }
 
-    private fun obtainBitmap(width: Int, height: Int): Bitmap {
-        val current = frame
-        if (current != null && current.width == width && current.height == height &&
-            !current.isRecycled
-        ) {
-            return current
+    fun destroy() {
+        runCatching {
+            lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+            lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+            lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         }
-        if (current != null) current.recycle()
-        return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        val content = contentShader ?: return
-        val w = width.toFloat()
-        val h = height.toFloat()
-        if (w <= 0f || h <= 0f) return
-        val glass = ensureShader(
-            w,
-            h,
-            radiusPx.coerceAtMost(minOf(w, h) / 2f),
-        ) ?: return
-        glass.setInputShader("content", content)
-        paint.shader = glass
-        try {
-            canvas.drawRect(0f, 0f, w, h, paint)
-        } catch (_: Throwable) {
-            // 运行期着色器异常（部分机型 AGSL 兼容性）：不绘制，保持透明
-        } finally {
-            paint.shader = null
-        }
-    }
-
-    private var shaderParams: Triple<Float, Float, Float>? = null
-    private var shaderFailed = false
-
-    /** 宽高/圆角以常量内插进 AGSL 源码（避免依赖 uniform setter API），
-     *  尺寸/圆角变化时重建着色器（开销极小且极少发生） */
-    private fun ensureShader(w: Float, h: Float, r: Float): RuntimeShader? {
-        if (shaderFailed) return null
-        val params = Triple(w, h, r)
-        val current = shader
-        if (current != null && shaderParams == params) return current
-        return try {
-            RuntimeShader(glassAgl(w, h, r)).also {
-                shader = it
-                shaderParams = params
-            }
-        } catch (_: Throwable) {
-            // AGSL 编译失败（语法/驱动不支持）：降级为不绘制
-            shaderFailed = true
-            null
-        }
-    }
-
-    private companion object {
-        /**
-         * 液态玻璃 AGSL：
-         * - SDF 圆角矩形边缘 → 边缘区沿法线方向折射采样（位移弯曲）
-         * - R/G/B 三通道错位采样 → 色散
-         * - 边缘 rim × 方向光 → 左上受光高光
-         * 尺寸参数以 const 内插（见 ensureShader）
-         */
-        private fun glassAgl(w: Float, h: Float, r: Float) = """
-            uniform shader content;
-            const float width = $w;
-            const float height = $h;
-            const float radius = $r;
-            const float edge = 12.0;
-            const float dispersion = 0.12;
-
-            float sdRoundedBox(float2 p, float2 b, float rr) {
-                float2 q = abs(p) - b + rr;
-                return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - rr;
-            }
-
-            half4 main(float2 fragCoord) {
-                float2 halfSize = float2(width, height) * 0.5;
-                float2 p = fragCoord - halfSize;
-                float d = sdRoundedBox(p, halfSize - 1.0, min(radius, min(halfSize.x, halfSize.y) - 1.0));
-                if (d > 1.0) {
-                    return half4(0.0);
-                }
-                float alpha = clamp(0.5 - d, 0.0, 1.0);
-
-                // 边缘法线（近似）：到内缩圆角矩形的最近点方向
-                float2 inner = halfSize - 1.0 - radius;
-                float2 clamped = clamp(p, -inner, inner);
-                float2 dir = p - clamped;
-                float len = length(dir);
-                float2 n = len > 0.0001 ? dir / len : float2(0.0, -1.0);
-
-                // 折射弯曲：越靠边缘越强
-                float t = 1.0 - clamp(-d / edge, 0.0, 1.0);
-                float bend = t * t * edge * 1.35;
-
-                float2 base = fragCoord - n * bend;
-                float2 disp = n * bend * dispersion;
-                half4 c;
-                c.r = content.eval(base + disp).r;
-                c.g = content.eval(base).g;
-                c.b = content.eval(base - disp).b;
-                c.a = 1.0;
-
-                // 边缘高光：rim 强度 × 左上方向光
-                float rim = smoothstep(-edge, 0.0, d) * (1.0 - smoothstep(0.0, 1.0, d));
-                float lit = clamp(dot(n, normalize(float2(-0.6, -0.8))), 0.0, 1.0);
-                c.rgb += rim * (0.30 + 0.70 * lit) * 0.32;
-
-                // 表面轻微提亮（玻璃通透感）
-                c.rgb += 0.03;
-
-                return half4(c.rgb * alpha, alpha);
-            }
-        """.trimIndent()
     }
 }

@@ -60,9 +60,10 @@ class GlassSurface extends StatelessWidget {
 
     final double sigma =
         (this.sigma ?? Pref.liquidGlassBlur).clamp(0.0, 40.0).toDouble();
+    // 液态玻璃配方：低模糊、低表面浊度（区别于毛玻璃的高模糊+高乳白）
     final Color tint =
         this.tint ??
-        colors.surface.withValues(alpha: isDark ? 0.34 : 0.50);
+        colors.surface.withValues(alpha: isDark ? 0.10 : 0.16);
 
     final ShapeBorder shape =
         this.shape ??
@@ -79,14 +80,14 @@ class GlassSurface extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: isDark
               ? [
-                  Colors.white.withValues(alpha: 0.30),
-                  Colors.white.withValues(alpha: 0.05),
-                  colors.onSurface.withValues(alpha: 0.18),
+                  Colors.white.withValues(alpha: 0.45),
+                  Colors.white.withValues(alpha: 0.08),
+                  colors.onSurface.withValues(alpha: 0.28),
                 ]
               : [
-                  Colors.white.withValues(alpha: 0.55),
-                  Colors.white.withValues(alpha: 0.10),
-                  colors.onSurface.withValues(alpha: 0.06),
+                  Colors.white.withValues(alpha: 0.75),
+                  Colors.white.withValues(alpha: 0.15),
+                  colors.onSurface.withValues(alpha: 0.10),
                 ],
         ),
         shape: shape,
@@ -103,10 +104,10 @@ class GlassSurface extends StatelessWidget {
                 end: Alignment.bottomCenter,
                 stops: const [0.0, 0.09, 0.9, 1.0],
                 colors: [
-                  Colors.white.withValues(alpha: isDark ? 0.20 : 0.35),
+                  Colors.white.withValues(alpha: isDark ? 0.28 : 0.45),
                   Colors.transparent,
                   Colors.transparent,
-                  colors.onSurface.withValues(alpha: isDark ? 0.12 : 0.06),
+                  colors.onSurface.withValues(alpha: isDark ? 0.16 : 0.08),
                 ],
               ),
               shape: RoundedRectangleBorder(borderRadius: borderRadius),
@@ -119,8 +120,8 @@ class GlassSurface extends StatelessWidget {
                   end: Alignment.bottomRight,
                   stops: const [0.0, 0.4, 1.0],
                   colors: [
-                    Colors.white.withValues(alpha: isDark ? 0.16 : 0.30),
-                    Colors.white.withValues(alpha: isDark ? 0.04 : 0.08),
+                    Colors.white.withValues(alpha: isDark ? 0.22 : 0.40),
+                    Colors.white.withValues(alpha: isDark ? 0.05 : 0.10),
                     Colors.transparent,
                   ],
                 ),

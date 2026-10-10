@@ -15,6 +15,8 @@ val isBuiltInKotlinEnabled = agpMajorVersion >= 9 &&
         (builtInKotlinProperty == null || builtInKotlinProperty.toBoolean())
 if (!isBuiltInKotlinEnabled) {
     apply(plugin = "org.jetbrains.kotlin.android")
+    // Compose Compiler 插件（液态玻璃原生层），版本须与 Kotlin 一致
+    apply(plugin = "org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -58,6 +60,8 @@ android {
         if (project.hasProperty("dev")) {
             resValues = true
         }
+        // 液态玻璃原生层（LiquidGlassOverlay）需要 Compose
+        compose = true
     }
 
     buildTypes {
@@ -99,4 +103,17 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // 液态玻璃原生层（测试特性，仅 Android 13+ 生效，运行时门控降级）
+    // Kyant0 Backdrop：Maven Central io.github.kyant0:backdrop（代码包为 com.kyant.backdrop）
+    implementation("io.github.kyant0:backdrop:2.0.1")
+    implementation(platform("androidx.compose:compose-bom:latest.integration"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.foundation:foundation")
+    // ComposeView 宿主所需的 ViewTree owner 扩展（setViewTreeLifecycleOwner 等）
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
+    implementation("androidx.savedstate:savedstate-ktx:1.2.1")
 }

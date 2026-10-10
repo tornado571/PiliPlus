@@ -135,7 +135,7 @@ List<SettingsModel> get styleSettings => [
   NormalModel(
     leading: const Icon(Icons.gradient_outlined),
     title: '玻璃模糊强度',
-    subtitle: '液态玻璃底栏的背景模糊强度，0为低性能模式（仅半透明，无模糊）',
+    subtitle: '液态观感建议6以下（中心通透），调高趋近毛玻璃；0为无模糊',
     getTrailing: (theme) => Text(
       Pref.liquidGlassBlur.toStringAsFixed(0),
       style: theme.textTheme.titleSmall,
