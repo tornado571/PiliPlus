@@ -30,14 +30,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
-import androidx.lifecycle.ViewTreeLifecycleOwner
-import androidx.lifecycle.ViewTreeViewModelStoreOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
-import androidx.savedstate.ViewTreeSavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
@@ -87,9 +84,6 @@ object LiquidGlassOverlay {
     private var radiusPx: Float = 0f
     private var capturing = false
     private var choreographerCallback: Choreographer.FrameCallback? = null
-
-    /** 是否由本层在 DecorView 上设置了 ViewTree owners（hide 时需还原） */
-    private var decorOwnersSet = false
 
     fun registerChannel(messenger: BinaryMessenger, hostActivity: Activity) {
         activity = hostActivity
@@ -171,13 +165,12 @@ object LiquidGlassOverlay {
 
         // 关键：Compose 的窗口级 Recomposer 从 DecorView 解析 owners
         // （正常由 ComponentActivity.setContentView 设置，FlutterActivity 不设置，
-        //  崩溃栈 "ViewTreeLifecycleOwner not found from DecorView" 即此因）
-        if (ViewTreeLifecycleOwner.get(decor) == null) {
-            decor.setViewTreeLifecycleOwner(lifecycleOwner)
-            decor.setViewTreeViewModelStoreOwner(lifecycleOwner)
-            decor.setViewTreeSavedStateRegistryOwner(lifecycleOwner)
-            decorOwnersSet = true
-        }
+        //  崩溃栈 "ViewTreeLifecycleOwner not found from DecorView" 即此因）。
+        // 不做 get 判空（ViewTree* 类不在本工程编译类路径），无条件设置，
+        // 再次 show 时用新 owner 覆盖。
+        decor.setViewTreeLifecycleOwner(lifecycleOwner)
+        decor.setViewTreeViewModelStoreOwner(lifecycleOwner)
+        decor.setViewTreeSavedStateRegistryOwner(lifecycleOwner)
 
         val params = FrameLayout.LayoutParams(width, height)
         view.translationX = left.toFloat()
@@ -190,15 +183,6 @@ object LiquidGlassOverlay {
 
     fun hide() {
         stopCaptureLoop()
-        // 先还原 DecorView 上的 owners（避免已销毁的 lifecycle 残留在窗口）
-        if (decorOwnersSet) {
-            (activity?.window?.decorView as? ViewGroup)?.let { decor ->
-                decor.setViewTreeLifecycleOwner(null)
-                decor.setViewTreeViewModelStoreOwner(null)
-                decor.setViewTreeSavedStateRegistryOwner(null)
-            }
-            decorOwnersSet = false
-        }
         overlay?.let { view ->
             (view.parent as? ViewGroup)?.removeView(view)
         }
@@ -209,7 +193,9 @@ object LiquidGlassOverlay {
         bitmap = null
         frameBitmap.value = null
         // 注意：不置空 activity —— channel 仅注册一次，
-        // 置空会导致后续 show 永远失败
+        // 置空会导致后续 show 永远失败；
+        // DecorView 上的 owners 不清除（本应用无其他 Compose 视图会读取，
+        // 下次 show 会以新 owner 覆盖）
     }
 
     private fun ensureBitmap(width: Int, height: Int) {
